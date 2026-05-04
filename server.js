@@ -1,1 +1,20 @@
-const TOKEN = "xYaECS8z1EMgFZUVexjrcOexQF0lG/8g0ECqz/n01ZFKj6qQKWAK0Wh6U+0Bkqs+CZQAUUd5XZuQmTXLBT9Q192T8dH7w6GNtL12x1K7W67KYobKjt6QywSZqpz7vyRpafaHPPl+VFr9pJCM6t48CwdB04t89/1O/w1cDnyilFU="
+const express = require("express");
+
+const app = express();
+app.use(express.json());
+
+app.post("/webhook", (req, res) => {
+  console.log("🔥 WEBHOOK HIT");
+
+  console.log("BODY:");
+  console.log(JSON.stringify(req.body, null, 2));
+
+  res.sendStatus(200);
+});
+
+app.get("/", (req, res) => {
+  res.send("OK");
+});
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log("running"));
