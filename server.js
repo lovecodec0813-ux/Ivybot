@@ -1,12 +1,14 @@
 const express = require("express");
+const axios = require("axios");
 
 const app = express();
 app.use(express.json());
 
-const TOKEN = "1zVRu/nj7CoR1tAyGWX8B5fcpE8ykdxFMDIoWUt3uu05OqZgPvUXvOdmLFnUou11CZQAUUd5XZuQmTXLBT9Q192T8dH7w6GNtL12x1K7W65FWMzQQvmTYBgH/zD1PaWMFlpYp9AVQPkHliGNYanytwdB04t89/1O/w1cDnyilFU=";
+const TOKEN = "你的新token";
 
 app.post("/webhook", async (req, res) => {
   console.log("🔥 WEBHOOK HIT");
+  console.log(JSON.stringify(req.body));
 
   const events = req.body.events || [];
 
@@ -14,22 +16,30 @@ app.post("/webhook", async (req, res) => {
     if (event.type === "message" && event.message.type === "text") {
       const text = event.message.text;
 
-      await fetch("https://api.line.me/v2/bot/message/reply", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + TOKEN
-        },
-        body: JSON.stringify({
-          replyToken: event.replyToken,
-          messages: [
-            {
-              type: "text",
-              text: "你說：" + text
+      try {
+        const result = await axios.post(
+          "https://api.line.me/v2/bot/message/reply",
+          {
+            replyToken: event.replyToken,
+            messages: [
+              {
+                type: "text",
+                text: "你說：" + text
+              }
+            ]
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${TOKEN}`,
+              "Content-Type": "application/json"
             }
-          ]
-        })
-      });
+          }
+        );
+
+        console.log("reply success", result.status);
+      } catch (err) {
+        console.error("reply error:", err.response?.data || err.message);
+      }
     }
   }
 
