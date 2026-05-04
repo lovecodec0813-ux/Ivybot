@@ -1,19 +1,12 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-
-const app = express();
-app.use(bodyParser.json());
-
-app.get("/", (req, res) => {
-  res.send("Bot is running");
-});
-
-app.post("/webhook", (req, res) => {
-  console.log("Received:", req.body);
-  res.sendStatus(200);
-});
-
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log("Bot running on port " + port);
-});
+{
+  "name": "Ivy-bot",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "body-parser": "^1.20.2"
+  }
+}
