@@ -1,40 +1,20 @@
 const express = require("express");
 
 const app = express();
+
+// ⚠️ LINE 一定要 JSON middleware
 app.use(express.json());
 
-const TOKEN = "你的Channel Access Token";
-
-app.post("/webhook", async (req, res) => {
-  const events = req.body.events;
-
-  if (!events) return res.sendStatus(200);
-
-  for (const event of events) {
-    if (event.type === "message" && event.message.type === "text") {
-      const text = event.message.text;
-
-      await fetch("https://api.line.me/v2/bot/message/reply", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${TOKEN}`
-        },
-        body: JSON.stringify({
-          replyToken: event.replyToken,
-          messages: [
-            {
-              type: "text",
-              text: "你說：" + text
-            }
-          ]
-        })
-      });
-    }
-  }
+app.post("/webhook", (req, res) => {
+  console.log("===== WEBHOOK HIT =====");
+  console.log("BODY:", JSON.stringify(req.body, null, 2));
 
   res.sendStatus(200);
 });
 
+app.get("/", (req, res) => {
+  res.send("OK");
+});
+
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log("Bot running"));
+app.listen(port, () => console.log("running"));
