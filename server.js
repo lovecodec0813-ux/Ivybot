@@ -7,7 +7,7 @@ app.get("/", (req, res) => {
 });
 
 app.post("/webhook", (req, res) => {
-  console.log("Webhook hit");
+  console.log("Webhook received");
   res.sendStatus(200);
 });
 
