@@ -1,10 +1,9 @@
 const express = require("express");
-const axios = require("axios");
 
 const app = express();
 app.use(express.json());
 
-const TOKEN = "填你的Channel Access Token";
+const TOKEN = "你的Channel Access Token";
 
 app.post("/webhook", async (req, res) => {
   const events = req.body.events;
@@ -15,9 +14,13 @@ app.post("/webhook", async (req, res) => {
     if (event.type === "message" && event.message.type === "text") {
       const text = event.message.text;
 
-      await axios.post(
-        "https://api.line.me/v2/bot/message/reply",
-        {
+      await fetch("https://api.line.me/v2/bot/message/reply", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${TOKEN}`
+        },
+        body: JSON.stringify({
           replyToken: event.replyToken,
           messages: [
             {
@@ -25,14 +28,8 @@ app.post("/webhook", async (req, res) => {
               text: "你說：" + text
             }
           ]
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${TOKEN}`,
-            "Content-Type": "application/json"
-          }
-        }
-      );
+        })
+      });
     }
   }
 
@@ -40,6 +37,4 @@ app.post("/webhook", async (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log("Bot running on " + port);
-});
+app.listen(port, () => console.log("Bot running"));
