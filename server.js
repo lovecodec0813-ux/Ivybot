@@ -4,15 +4,16 @@ const axios = require("axios");
 const app = express();
 app.use(express.json());
 
-const TOKEN = "你的新token";
+const TOKEN = "你的Channel Access Token";
 
 app.post("/webhook", async (req, res) => {
   console.log("🔥 WEBHOOK HIT");
-  console.log(JSON.stringify(req.body));
 
   const events = req.body.events || [];
 
   for (const event of events) {
+    console.log("EVENT TYPE:", event.type);
+
     if (event.type === "message" && event.message.type === "text") {
       const text = event.message.text;
 
@@ -30,20 +31,24 @@ app.post("/webhook", async (req, res) => {
           },
           {
             headers: {
-              Authorization: `Bearer ${TOKEN}`,
-              "Content-Type": "application/json"
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${TOKEN}`
             }
           }
         );
 
-        console.log("reply success", result.status);
+        console.log("✅ REPLY SUCCESS:", result.status);
       } catch (err) {
-        console.error("reply error:", err.response?.data || err.message);
+        console.error("❌ REPLY ERROR:", err.response?.data || err.message);
       }
     }
   }
 
   res.sendStatus(200);
+});
+
+app.get("/", (req, res) => {
+  res.send("OK");
 });
 
 const port = process.env.PORT || 3000;
