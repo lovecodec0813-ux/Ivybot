@@ -5,8 +5,6 @@ app.use(express.json());
 
 app.post("/webhook", (req, res) => {
   console.log("🔥 WEBHOOK HIT");
-
-  console.log("BODY:");
   console.log(JSON.stringify(req.body, null, 2));
 
   res.sendStatus(200);
