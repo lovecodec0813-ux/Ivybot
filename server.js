@@ -1,181 +1,139 @@
 const express = require("express");
 const axios = require("axios");
+const { Pool } = require("pg");
 
 const app = express();
 app.use(express.json());
 
-// ====== 必填 ======
 const LINE_TOKEN = "NxvcK+H+5ZSdkLRVQjQRZkaUNMlCGEWY/20ap3wi1OiYiCFfnLkZ1q97uvCP5zxlCZQAUUd5XZuQmTXLBT9Q192T8dH7w6GNtL12x1K7W67G0MAIbAK5r/nIJpQSkON5EFe4/Dd3oJASENwLXVEOpgdB04t89/1O/w1cDnyilFU=";
-// （可選）AI，如果你要聊天更聰明再填
-const OPENAI_API_KEY = ""; // 沒填就用簡單回覆
-// ==================
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// 🔔 簡易提醒（記憶體版：重啟會消失）
-const alerts = []; // { userId, code, target }
+// PostgreSQL（Render 會給你連線字串）
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
 
-// 📈 台股簡易查價（示範：用 Yahoo Finance API）
-async function getStockPrice(code) {
-  try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}.TW`;
-    const res = await axios.get(url);
-    const result = res.data.chart.result[0];
-    const price = result.meta.regularMarketPrice;
-    const name = result.meta.symbol;
-    return { name, price };
-  } catch (e) {
-    return null;
-  }
+// 📈 股票資料（改用較穩來源：Finnhub）
+const STOCK_API = "https://finnhub.io/api/v1/quote";
+const STOCK_KEY = "你的FINNHUB KEY";
+
+async function getStock(code) {
+  const res = await axios.get(STOCK_API, {
+    params: { symbol: code + ".TW", token: STOCK_KEY }
+  });
+
+  return res.data; // c: current price
 }
 
-// 🤖 簡單 AI（沒填 OPENAI_API_KEY 就用 fallback）
-async function aiReply(text) {
-  if (!OPENAI_API_KEY) {
-    return `我收到：${text}`;
-  }
-  try {
-    const res = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: text }]
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
-    return res.data.choices[0].message.content;
-  } catch (e) {
-    return "AI 暫時忙碌中～";
-  }
+// 📊 策略（簡化版）
+function strategy(price, prev) {
+  if (price > prev) return "📈 多方偏強，可觀察拉回";
+  if (price < prev) return "📉 偏弱，建議保守";
+  return "⚖️ 盤整中";
 }
 
-// 📩 回覆 LINE
-async function reply(replyToken, text) {
-  return axios.post(
-    "https://api.line.me/v2/bot/message/reply",
+// 🤖 AI
+async function ai(text) {
+  const res = await axios.post(
+    "https://api.openai.com/v1/chat/completions",
     {
-      replyToken,
-      messages: [{ type: "text", text }]
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "你是股票助理，回答簡潔且專業" },
+        { role: "user", content: text }
+      ]
     },
     {
       headers: {
-        Authorization: `Bearer ${LINE_TOKEN}`,
-        "Content-Type": "application/json"
+        Authorization: `Bearer ${OPENAI_API_KEY}`
       }
     }
   );
+  return res.data.choices[0].message.content;
 }
 
-// 🔔 檢查提醒（每 30 秒）
+// 🔔 建立資料表（第一次跑）
+pool.query(`
+CREATE TABLE IF NOT EXISTS alerts (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT,
+  code TEXT,
+  target FLOAT
+);
+`);
+
+// 🔔 檢查提醒
 setInterval(async () => {
-  for (let i = alerts.length - 1; i >= 0; i--) {
-    const a = alerts[i];
-    const data = await getStockPrice(a.code);
-    if (!data) continue;
+  const result = await pool.query("SELECT * FROM alerts");
 
-    if (data.price >= a.target) {
-      try {
-        await axios.post(
-          "https://api.line.me/v2/bot/message/push",
-          {
-            to: a.userId,
-            messages: [
-              {
-                type: "text",
-                text: `${a.code} 到價！現在 ${data.price}（目標 ${a.target}）`
-              }
-            ]
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${LINE_TOKEN}`,
-              "Content-Type": "application/json"
-            }
+  for (const row of result.rows) {
+    const stock = await getStock(row.code);
+
+    if (stock.c >= row.target) {
+      await axios.post(
+        "https://api.line.me/v2/bot/message/push",
+        {
+          to: row.user_id,
+          messages: [
+            { type: "text", text: `${row.code} 到價 ${stock.c}` }
+          ]
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${LINE_TOKEN}`
           }
-        );
-      } catch (e) {}
+        }
+      );
 
-      alerts.splice(i, 1); // 觸發後移除
+      await pool.query("DELETE FROM alerts WHERE id=$1", [row.id]);
     }
   }
-}, 30000);
+}, 60000);
 
-// 🌐 Webhook
+// 🌐 webhook
 app.post("/webhook", async (req, res) => {
-  const events = req.body.events || [];
+  const event = req.body.events[0];
+  if (!event) return res.sendStatus(200);
 
-  for (const event of events) {
-    if (event.type !== "message" || event.message.type !== "text") continue;
+  const text = event.message.text;
+  const userId = event.source.userId;
 
-    const text = event.message.text.trim();
-    const userId = event.source.userId;
+  let replyText = "";
 
-    let replyText = "";
-
-    // 🙋 help
-    if (text.toLowerCase() === "help") {
-      replyText =
-`功能：
-1️⃣ 輸入股票代碼：2330
-2️⃣ 分析：分析 2330
-3️⃣ 設提醒：提醒 2330 600
-4️⃣ 其他：AI聊天`;
-    }
-
-    // 🔔 提醒：提醒 2330 600
-    else if (/^提醒\s+\d{4}\s+\d+(\.\d+)?$/.test(text)) {
-      const [, code, target] = text.match(/^提醒\s+(\d{4})\s+(\d+(\.\d+)?)$/);
-      alerts.push({ userId, code, target: Number(target) });
-      replyText = `已設定提醒：${code} ≥ ${target}`;
-    }
-
-    // 📊 分析：分析 2330（示範版）
-    else if (/^分析\s+\d{4}$/.test(text)) {
-      const code = text.split(" ")[1];
-      const data = await getStockPrice(code);
-      if (!data) {
-        replyText = "查不到這檔股票";
-      } else {
-        replyText =
-`${code} 現價：${data.price}
-（示範）建議：
-- 觀察量能
-- 留意支撐/壓力
-- 分批進出`;
-      }
-    }
-
-    // 📈 股票查價：2330
-    else if (/^\d{4}$/.test(text)) {
-      const data = await getStockPrice(text);
-      if (!data) {
-        replyText = "查不到這檔股票";
-      } else {
-        replyText = `${text} 現價：${data.price}`;
-      }
-    }
-
-    // 🤖 其他 → AI
-    else {
-      replyText = await aiReply(text);
-    }
-
-    try {
-      await reply(event.replyToken, replyText);
-      console.log("reply ok");
-    } catch (e) {
-      console.error("reply error", e.response?.data || e.message);
-    }
+  if (/^\d{4}$/.test(text)) {
+    const stock = await getStock(text);
+    replyText =
+`${text} 現價：${stock.c}
+漲跌：${stock.d}
+${strategy(stock.c, stock.pc)}`;
   }
+
+  else if (/^提醒/.test(text)) {
+    const [_, code, target] = text.split(" ");
+    await pool.query(
+      "INSERT INTO alerts(user_id, code, target) VALUES($1,$2,$3)",
+      [userId, code, target]
+    );
+    replyText = "提醒已設定";
+  }
+
+  else {
+    replyText = await ai(text);
+  }
+
+  await axios.post(
+    "https://api.line.me/v2/bot/message/reply",
+    {
+      replyToken: event.replyToken,
+      messages: [{ type: "text", text: replyText }]
+    },
+    {
+      headers: { Authorization: `Bearer ${LINE_TOKEN}` }
+    }
+  );
 
   res.sendStatus(200);
 });
 
-// 測試首頁
-app.get("/", (req, res) => res.send("OK"));
-
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log("running"));
+app.listen(process.env.PORT || 3000);
